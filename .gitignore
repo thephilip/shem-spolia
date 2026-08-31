@@ -1,0 +1,8 @@
+_build/
+deps/
+*.ez
+shem_audit
+erl_crash.dump
+doc/
+.elixir_ls/
+cover/
