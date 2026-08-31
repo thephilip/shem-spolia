@@ -143,7 +143,111 @@ shem-spolia/
 
 ---
 
-## Phase 1: Needle transport
+## Phase 1: Needle transport — **DONE**
+
+Built against the real model, not the docs. `needle2` linux-x86_64, downloaded
+from Hugging Face (public, Apache-2.0, **no token required** — the model page is
+ungated despite the spec assuming otherwise).
+
+### What shipped
+
+| Module | Purpose |
+|---|---|
+| `ShemSpolia.Needle` | binary discovery, one-shot `complete/2`, `audited_complete/3`, `encode_tools/1` |
+| `ShemSpolia.Needle.Response` | normalized turn: calls, confidence, validation, refusal/final predicates |
+| `ShemSpolia.Needle.Session` | supervised `needle --serve` process, stateful multi-turn |
+| `ShemSpolia.Needle.HTTP` | ~140-line HTTP/1.1 POST over `:gen_tcp` |
+| `shem_audit needle` | CLI: one audited turn, prints calls + confidence + session id |
+
+### Corrections to the spec, from measurement
+
+1. **Not an HTTP-only transport, and not a `Port`-only one either.** Needle has
+   *two* modes and they are not interchangeable: `--prompt` is stateless
+   (Port, ~350 ms), `--serve` is a stateful HTTP conversation. The spec assumed
+   one transport shape; the model needs both, and the difference is semantic
+   (conversation memory), not mechanical.
+
+2. **`--serve` holds conversation state in the OS process.** Verified: turn 3
+   ("now the bedroom too") resolved against turn 1's kitchen. So a session owns
+   its server exclusively — a shared pool would cross-contaminate histories.
+   Each session takes an OS-assigned free port.
+
+3. **The response schema differs from the published docs.** The shipped binary
+   returns `reason` (undocumented) and `validation` (undocumented:
+   `{ungrounded: [...], negation: bool}`), and omits `validation` entirely on
+   refusals. `Response` parses defensively against the real wire format.
+
+4. **`:httpc` is unusable here.** It constructs TLS defaults *before* inspecting
+   the scheme, so a plain `http://127.0.0.1` POST raises
+   `:public_key.pkix_verify_hostname_match_fun/1 is undefined` in a stripped
+   escript. Writing the HTTP client directly costs ~140 lines and keeps the
+   binary dependency-free.
+
+5. **Tool JSON key order changes model behavior.** See below.
+
+### The name-first hazard
+
+A tool object that does not lead with `"name"` can be **invisible** to Needle:
+it answers `[]` with high confidence, which is byte-identical to a legitimate
+"no tool serves this" refusal. Silent wrong behavior, not an error.
+
+Bisected across 16 permutations (deterministic — same bytes, same confidence):
+
+| top-level order | result |
+|---|---|
+| `name` first (8 combinations) | CALL, every time |
+| `description` first + apostrophe in description (4) | refusal, every time |
+| `description` first, no apostrophe (4) | CALL |
+
+Nested key order (`parameters`, `properties`) never mattered. The apostrophe
+only matters once the ordering is already wrong.
+
+Elixir maps do not preserve insertion order, so `Jason.encode!/1` on a tool map
+emits whatever order the map iterates — a coin flip on this behavior.
+`Needle.encode_tools/1` emits `name` first by construction, and
+`test/needle_smoke.exs` keeps a live assertion that the hazard reproduces, so a
+future Needle release fixing it surfaces as a failing test rather than silence.
+
+### Two more bugs, found by running it
+
+**1. One-shot CLI commands lost their evidence.** `shem_audit needle ...`
+recorded a turn, then `verify` reported `LEGACY · 0` with "dets: file not
+properly closed". **DETS only guarantees durability on close, and an escript
+exits the moment `main/1` returns** — no terminate callback runs. Every
+one-shot CLI command was affected.
+
+Fixed with `EventLog.flush/0`, called from a single `one_shot/1` wrapper and
+from `die/1` (since `System.halt/1` also skips `after` blocks). Now:
+`VERIFIED · 2 events`, attests, passes `verify.py`.
+
+**2. `Session.stop/1` leaked the OS process.** `Port.close/1` detaches the BEAM
+from the pipe but leaves `needle --serve` running — 8 orphans accumulated
+across one test run, each holding a TCP port and ~26 MB. Worse: each inherited
+the VM's stdout, so a *finished* test suite piped to `tail` never saw EOF and
+hung indefinitely. That symptom is what exposed it.
+
+Fixed by signalling the OS pid directly (`Port.info/1` → `:os_pid`, TERM then
+KILL) and by spawning with `:stderr_to_stdout` so needle's output stays on the
+port we own. `test/needle_smoke.exs` now asserts via `ps` that no child
+survives a stop.
+
+Both are the class of bug the in-VM suite cannot catch: one needs process
+exit, the other needs process *lifetime*.
+
+### Verified
+
+`NEEDLE_PATH=... mix run test/needle_smoke.exs` — 44 checks against the real
+model: tool encoding, one-shot calls with argument extraction, refusal on
+off-topic input, parallel calls, system facts, tools-as-file-path, the
+name-first hazard reproducing, confidence gating, stateful multi-turn with
+result feedback, session isolation on separate ports, **no orphaned OS
+processes after stop**, audited turns entering the chain with confidence
+recorded, offline attest verification, and failure recorded rather than
+swallowed.
+
+Skips cleanly (exit 0) when no Needle binary is present.
+
+---
 
 ### 1.1 Design
 

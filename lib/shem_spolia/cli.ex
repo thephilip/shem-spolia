@@ -6,20 +6,51 @@ defmodule ShemSpolia.CLI do
       shem_audit attest <session>   # write a bundle for a session
       shem_audit verify <session>   # recompute the chain, print the verdict
       shem_audit sessions           # list known sessions
+      shem_audit needle <tools.json> <query>
+                                    # one audited Needle turn; prints the calls
+                                    # and the session id holding the record
   """
 
   def main(argv) do
     {:ok, _} = Application.ensure_all_started(:shem_spolia)
 
     case argv do
-      ["serve" | _] -> ShemSpolia.MCP.Server.serve()
-      ["attest", session | rest] -> attest(session, rest)
-      ["verify", session | _] -> verify(session)
-      ["sessions" | _] -> sessions()
-      [] -> usage()
-      ["help" | _] -> usage()
-      other -> die("unknown command: #{Enum.join(other, " ")}")
+      # long-running: owns its own lifecycle, flushes when stdin closes
+      ["serve" | _] ->
+        ShemSpolia.MCP.Server.serve()
+        ShemSpolia.EventLog.flush()
+
+      ["attest", session | rest] ->
+        one_shot(fn -> attest(session, rest) end)
+
+      ["verify", session | _] ->
+        one_shot(fn -> verify(session) end)
+
+      ["sessions" | _] ->
+        one_shot(&sessions/0)
+
+      ["needle", tools, query | _] ->
+        one_shot(fn -> needle(tools, query) end)
+
+      [] ->
+        usage()
+
+      ["help" | _] ->
+        usage()
+
+      other ->
+        die("unknown command: #{Enum.join(other, " ")}")
     end
+  end
+
+  # DETS only guarantees durability on close, and an escript exits the moment
+  # main/1 returns — no terminate callback runs. Without this flush, events
+  # written by the command are still in the buffer and the file is left dirty,
+  # so the session reopens as LEGACY · 0 and the record is gone.
+  defp one_shot(fun) do
+    fun.()
+  after
+    ShemSpolia.EventLog.flush()
   end
 
   defp attest(session, rest) do
@@ -54,6 +85,33 @@ defmodule ShemSpolia.CLI do
     end
   end
 
+  defp needle(tools_path, query) do
+    unless ShemSpolia.Needle.available?() do
+      die("needle binary not found — set NEEDLE_PATH or put `needle` on PATH")
+    end
+
+    unless File.exists?(tools_path), do: die("no such tools file: #{tools_path}")
+
+    {:ok, session_id} = ShemSpolia.EventLog.start_session()
+
+    case ShemSpolia.Needle.audited_complete(session_id, query, tools: tools_path) do
+      {:ok, response} ->
+        if response.tool_calls == [] do
+          IO.puts("no call — #{response.reasoning || "no declared tool serves this"}")
+        else
+          Enum.each(response.tool_calls, fn c ->
+            IO.puts("#{c.name} #{Jason.encode!(c.arguments)}")
+          end)
+        end
+
+        IO.puts("confidence: #{response.confidence}")
+        IO.puts("recorded in: #{session_id}")
+
+      {:error, reason} ->
+        die("needle failed: #{inspect(reason)} (recorded in #{session_id})")
+    end
+  end
+
   defp sessions do
     case ShemSpolia.EventLog.known_session_ids() do
       [] -> IO.puts("(no sessions)")
@@ -67,6 +125,9 @@ defmodule ShemSpolia.CLI do
 
   defp die(msg) do
     IO.puts(:stderr, msg)
+    # flush before halting: System.halt/1 skips `after` blocks and terminate
+    # callbacks, so an error path would otherwise leave DETS dirty.
+    ShemSpolia.EventLog.flush()
     System.halt(2)
   end
 end

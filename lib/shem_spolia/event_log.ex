@@ -132,6 +132,22 @@ defmodule ShemSpolia.EventLog do
     (on_disk ++ Enum.map(loaded, & &1.id)) |> Enum.uniq()
   end
 
+  @doc """
+  Flush and close every open session store.
+
+  DETS buffers writes and only guarantees durability on close. A one-shot CLI
+  command exits the VM as soon as `main/1` returns, which is BEFORE any
+  terminate callback would run — so without this, events written moments
+  earlier are still in the buffer and the file is left dirty. It then reopens
+  as an empty, "not properly closed" table and the session reads as `LEGACY ·
+  0`: the record silently vanishes.
+
+  Long-running modes (the MCP server) do not need this — they keep the handle
+  open for their whole life — but calling it is harmless there too.
+  """
+  @spec flush() :: :ok
+  def flush, do: GenServer.call(__MODULE__, :flush)
+
   # ── Server callbacks ────────────────────────────────────────────────────────
 
   @impl true
@@ -235,6 +251,21 @@ defmodule ShemSpolia.EventLog do
       :error ->
         {:reply, {:error, :session_not_found}, state}
     end
+  end
+
+  @impl true
+  def handle_call(:flush, _from, state) do
+    sessions =
+      Map.new(state.sessions, fn
+        {id, {handle, session}} when handle != nil ->
+          state.store.close(handle)
+          {id, {nil, ShemSpolia.EventLog.Session.close(session)}}
+
+        {id, entry} ->
+          {id, entry}
+      end)
+
+    {:reply, :ok, %{state | sessions: sessions}}
   end
 
   @impl true
