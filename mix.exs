@@ -11,6 +11,7 @@ defmodule ShemSpolia.MixProject do
       deps: deps(),
       escript: escript(),
       description: "Portable, offline-verifiable auditor for local-model agents",
+      source_url: "https://github.com/thephilip/shem-spolia",
       package: package()
     ]
   end
@@ -46,8 +47,9 @@ defmodule ShemSpolia.MixProject do
   defp package do
     [
       name: :shem_spolia,
-      files: ~w(lib priv mix.exs README.md),
-      licenses: ["Apache-2.0"]
+      files: ~w(lib priv mix.exs README.md LICENSE),
+      licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/thephilip/shem-spolia"}
     ]
   end
 end
