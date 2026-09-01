@@ -30,9 +30,19 @@ defmodule ShemSpolia.EventLog.Chain do
 
   @spec verify([Event.t()], String.t(), map() | nil) ::
           {:ok, :verified | :legacy, non_neg_integer()}
-          | {:ok, :verified_gc | :legacy, %{pruned: non_neg_integer(), replayable: non_neg_integer()}}
+          | {:ok, :verified_gc | :legacy,
+             %{pruned: non_neg_integer(), replayable: non_neg_integer()}}
           | {:error, {:broken_at, String.t()}}
   def verify(events, session_id, digest \\ nil)
+
+  # An empty session is not legacy. `:legacy` is a claim about evidence we
+  # cannot speak to — an unhashed prefix recorded before chaining existed. A
+  # session with no events has no such prefix; it has nothing, which is
+  # trivially intact. Reporting `:legacy` here put a permanent "unverifiable"
+  # mark on every session between `start_session/0` and its first append, and
+  # in a tool whose entire value is saying precisely what it does and does not
+  # know, that is a false accusation.
+  def verify([], _session_id, nil), do: {:ok, :verified, 0}
 
   def verify(events, session_id, nil) do
     {_legacy_prefix, hashed} = Enum.split_while(events, &is_nil(&1.hash))

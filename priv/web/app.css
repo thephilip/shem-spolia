@@ -1,0 +1,252 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   shem-spolia — CUSTODY / dark
+   See DESIGN.md. Paper, not widgets: radii are 0, shadows are hard offsets,
+   the red thread is the hash chain rendered as a physical object.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Regular.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Bold.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Italic.woff2") format("woff2");font-weight:400;font-style:italic;font-display:swap}
+
+:root{
+  --stock:    #131110;
+  --sheet:    #1a1715;
+  --sheet-2:  #211d1a;
+  --sheet-3:  #0f0d0c;
+  --rule:     #322c26;
+  --rule-2:   #453d34;
+
+  --ink:      #ded4c1;
+  --ink-2:    #9c9280;
+  --ink-3:    #6d6555;
+
+  --thread:   #c4453a;
+  --ok:       #6fbf8e;
+  --bad:      #e8695c;
+  --amber:    #d9a441;
+  --pencil:   #7fa8d4;
+
+  --ff: "Courier Prime","Courier New",ui-monospace,monospace;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+html{background:var(--stock)}
+body{
+  min-height:100vh;background:var(--stock);color:var(--ink);
+  font:400 13px/1.6 var(--ff);
+  -webkit-font-smoothing:antialiased;position:relative;
+}
+
+/* ── paper effects: tooth + fold ─────────────────────────────────────────
+   Inline SVG turbulence, no image requests (the CSP forbids remote ones and
+   a base64 PNG would cost more bytes than the filter). */
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:900;opacity:.13;
+  mix-blend-mode:soft-light;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.6' numOctaves='5'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:899;
+  background:linear-gradient(90deg,#ffffff00 32.9%,#ffffff09 33%,#ffffff00 33.2%,
+                                    #ffffff00 66.4%,#ffffff09 66.5%,#ffffff00 66.7%);
+}
+
+/* Grain and fold are texture, not information. Anyone who has asked the OS to
+   stop moving things has also, usually, asked it to stop shimmering. */
+@media (prefers-reduced-motion:reduce){
+  body::before{opacity:.06}
+  *{transition:none !important;animation:none !important}
+}
+
+.sheet{max-width:1180px;margin:0 auto;padding:0 34px 70px;position:relative;z-index:1}
+.sheet::before{
+  content:"";position:absolute;left:11px;top:120px;bottom:60px;width:14px;
+  background-image:radial-gradient(circle at 7px 7px, #000000cc 0 5px, #ffffff0e 5.4px, #ffffff00 6.6px);
+  background-size:14px 132px;background-repeat:repeat-y;
+}
+
+/* ── focus: never removed ── */
+:focus-visible{outline:1px solid var(--amber);outline-offset:2px}
+
+/* ── docket head ─────────────────────────────────────────────────────── */
+.docket{padding:34px 0 14px;border-bottom:2px solid var(--rule-2);margin-bottom:2px}
+.docket .line{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.docket h1{
+  font:700 21px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
+  text-shadow:0 -1px 0 #00000090, 0 1px 0 #ffffff14;
+}
+.docket .sub{font:400 11px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);padding-bottom:2px}
+.docket .no{margin-left:auto;font:400 11px/1.7 var(--ff);color:var(--ink-2);text-align:right}
+.docket .no b{color:var(--ink);letter-spacing:.06em;font-weight:700}
+.docket .live{color:var(--ok)}
+.docket .dead{color:var(--bad)}
+.underline2{height:1px;background:var(--rule-2);margin-bottom:22px}
+
+/* ── form row (counts) ───────────────────────────────────────────────── */
+.form{display:flex;border:1px solid var(--rule-2);margin-bottom:22px;background:var(--sheet);flex-wrap:wrap}
+.field{flex:1;min-width:120px;padding:9px 13px;border-right:1px solid var(--rule)}
+.field:last-child{border-right:0}
+.field .k{font:400 9px/1 var(--ff);letter-spacing:.17em;text-transform:uppercase;color:var(--ink-3)}
+.field .v{font:700 17px/1 var(--ff);margin-top:7px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.field .v.red{color:var(--bad)}
+.field .v.grn{color:var(--ok)}
+
+/* ── search ──────────────────────────────────────────────────────────── */
+.search{display:flex;gap:0;margin-bottom:22px;border:1px solid var(--rule-2);background:var(--sheet)}
+.search input{
+  flex:1;background:transparent;border:0;color:var(--ink);
+  font:400 13px/1 var(--ff);padding:12px 14px;
+}
+.search input::placeholder{color:var(--ink-3)}
+.search input:focus{outline:none;background:#00000030}
+.search .lbl{
+  font:400 9px/1 var(--ff);letter-spacing:.17em;text-transform:uppercase;color:var(--ink-3);
+  padding:14px 0 0 14px;flex:none;
+}
+
+.grid{display:grid;grid-template-columns:288px 1fr;gap:26px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+
+.tabs h2,.exhibit h2{
+  font:700 10px/1 var(--ff);letter-spacing:.19em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:9px;display:flex;align-items:baseline;gap:8px;
+}
+.tabs h2 .n,.exhibit h2 .n{color:var(--ink-2);font-weight:400;letter-spacing:.1em}
+
+/* ── custody file tabs ───────────────────────────────────────────────── */
+.tab{
+  display:block;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit;
+  background:var(--sheet);
+  border:1px solid var(--rule);border-left:5px solid var(--rule-2);
+  padding:10px 12px;margin-bottom:-1px;position:relative;
+  transition:background .1s,border-left-color .1s;
+}
+.tab:hover{background:var(--sheet-2)}
+.tab.sel{background:var(--sheet-2);border-left-color:var(--thread);box-shadow:1px 0 0 var(--sheet-2);z-index:2}
+.tab .id{font:700 11.5px/1.3 var(--ff);word-break:break-all;color:var(--ink)}
+.tab .st{margin-top:6px;font:400 10px/1 var(--ff);color:var(--ink-2);display:flex;align-items:center;gap:6px}
+.tab .clip{position:absolute;right:8px;top:9px;font:italic 400 10.5px/1 var(--ff);color:var(--pencil)}
+.tick{font-weight:700}
+.tick.ok{color:var(--ok)}
+.tick.bad{color:var(--bad)}
+.tick.warn{color:var(--amber)}
+
+/* ── exhibit card ────────────────────────────────────────────────────── */
+.card{background:var(--sheet);border:1px solid var(--rule-2);box-shadow:0 2px 0 #00000060, 0 10px 30px -20px #000}
+.cardhead{padding:13px 16px;border-bottom:1px solid var(--rule);display:flex;align-items:center;gap:14px;background:#00000030;flex-wrap:wrap}
+.cardhead .sid{font:700 12.5px/1 var(--ff);color:var(--ink);word-break:break-all}
+.cardhead .meta{margin-left:auto;font:400 10px/1 var(--ff);color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase}
+
+/* ── disposition: typed on a ruled line ──────────────────────────────── */
+.disp{display:flex;align-items:baseline;gap:12px;padding:11px 16px;border-bottom:1px solid var(--rule);background:#00000018;flex-wrap:wrap}
+.disp .lbl{font:400 9.5px/1 var(--ff);letter-spacing:.19em;text-transform:uppercase;color:var(--ink-3);flex:none}
+.disp .val{font:700 12px/1 var(--ff);letter-spacing:.14em;text-transform:uppercase;border-bottom:1px solid currentColor;padding-bottom:3px}
+.disp .val.ok{color:var(--ok)}
+.disp .val.bad{color:var(--bad)}
+.disp .val.warn{color:var(--amber)}
+.disp .ref{margin-left:auto;font:400 10px/1 var(--ff);color:var(--ink-3);word-break:break-all}
+
+/* ── the chain on red thread ─────────────────────────────────────────── */
+/* The right padding is the margin the annotations live in. Without it the
+   pencil notes overlap the timestamps, which is exactly the thing a real
+   margin exists to prevent. */
+.log{padding:20px 106px 8px 18px;position:relative}
+.log::before{content:"";position:absolute;left:29px;top:30px;bottom:30px;width:2px;background:var(--thread);opacity:.8}
+.log.empty::before{display:none}
+
+.entry{position:relative;padding-left:32px;margin-bottom:14px}
+.entry .knot{
+  position:absolute;left:24px;top:9px;width:12px;height:12px;border-radius:50%;
+  background:var(--sheet);border:2px solid var(--thread);z-index:2;
+}
+.entry.cut .knot{background:var(--bad);border-color:var(--bad)}
+/* the severed thread */
+.entry.cut::after{content:"";position:absolute;left:23px;top:22px;width:14px;height:15px;background:var(--sheet);z-index:1}
+
+.slipcard{
+  border:1px solid var(--rule);border-left:3px solid var(--rule-2);
+  background:var(--sheet-2);padding:9px 13px;box-shadow:inset 0 1px 0 #ffffff07;
+  cursor:pointer;
+}
+.slipcard:hover{background:#262119}
+.entry.llm    .slipcard{border-left-color:var(--pencil)}
+.entry.tool   .slipcard{border-left-color:var(--amber)}
+.entry.result .slipcard{border-left-color:var(--ok)}
+.entry.fork   .slipcard{border-left-color:var(--thread)}
+.entry.cut    .slipcard{border-left-color:var(--bad);background:#241715}
+.entry.sel    .slipcard{outline:1px solid var(--amber);outline-offset:-1px}
+
+.slipcard .r1{display:flex;align-items:baseline;gap:11px}
+.slipcard .ty{font:700 10.5px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
+.entry.llm .ty{color:var(--pencil)}
+.entry.tool .ty{color:var(--amber)}
+.entry.result .ty{color:var(--ok)}
+.entry.fork .ty{color:var(--thread)}
+.entry.cut .ty{color:var(--bad)}
+.slipcard .tm{margin-left:auto;font:400 10px/1 var(--ff);color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none}
+.slipcard .bd{margin-top:7px;font:400 12px/1.55 var(--ff);color:var(--ink-2);word-break:break-word}
+.slipcard .bd em{font-style:normal;font-weight:700;color:var(--ink);box-shadow:inset 0 -1px 0 var(--amber)}
+.slipcard .hx{
+  margin-top:8px;font:400 9.5px/1 var(--ff);color:var(--ink-3);letter-spacing:.03em;
+  border-top:1px dotted var(--rule-2);padding-top:7px;word-break:break-all;
+}
+.entry.cut .hx{color:var(--bad);font-weight:700}
+.margin-note{position:absolute;right:-98px;top:9px;width:92px;font:italic 400 11px/1.35 var(--ff);color:var(--pencil);pointer-events:none}
+.margin-note.bad{color:var(--bad)}
+
+/* expanded payload */
+.payload{
+  margin-top:9px;padding:9px 11px;background:var(--sheet-3);border:1px solid var(--rule);
+  font:400 11px/1.5 var(--ff);color:var(--ink-2);white-space:pre-wrap;word-break:break-word;
+  max-height:340px;overflow:auto;
+}
+
+/* ── actions ─────────────────────────────────────────────────────────── */
+.strip{display:flex;gap:10px;padding:14px 16px;border-top:1px solid var(--rule);background:#00000024;flex-wrap:wrap}
+button.st{
+  font:700 10.5px/1 var(--ff);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink);background:var(--sheet-2);cursor:pointer;
+  border:1px solid var(--rule-2);padding:9px 14px;
+  box-shadow:2px 2px 0 #00000090;transition:transform .05s,box-shadow .05s,background .1s;
+}
+button.st:hover:not(:disabled){background:#2a2521;border-color:#574d42}
+button.st:active:not(:disabled){transform:translate(2px,2px);box-shadow:0 0 0 #00000090}
+button.st.go{background:#7d251d;color:#f6ece0;border-color:#a8342a}
+button.st.go:hover:not(:disabled){background:#932c22}
+button.st:disabled{opacity:.42;cursor:not-allowed;box-shadow:none;transform:none;text-decoration:line-through}
+
+.finding{padding:11px 16px;font:400 11px/1.6 var(--ff);color:var(--ink-2);border-top:1px solid var(--rule);word-break:break-word}
+.finding b{color:var(--bad);font-weight:700}
+.finding em{font-style:normal;color:var(--ink);box-shadow:inset 0 -1px 0 var(--amber)}
+.finding.ok b{color:var(--ok)}
+.finding .path{display:block;margin-top:6px;color:var(--ink-3);font-size:10.5px;word-break:break-all}
+
+/* ── recall results ──────────────────────────────────────────────────── */
+.hit{border:1px solid var(--rule);border-left:3px solid var(--pencil);background:var(--sheet-2);padding:9px 13px;margin-bottom:9px;cursor:pointer}
+.hit:hover{background:#262119}
+.hit .r1{display:flex;align-items:baseline;gap:11px}
+.hit .sid{font:700 10.5px/1 var(--ff);color:var(--ink-2);word-break:break-all}
+.hit .score{margin-left:auto;font:400 10px/1 var(--ff);color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none}
+.hit .snip{margin-top:7px;font:400 11.5px/1.5 var(--ff);color:var(--ink-2)}
+.skipped{border:1px solid #45312c;border-left:3px solid var(--bad);background:#241715;padding:9px 13px;margin-bottom:9px;font:400 11px/1.5 var(--ff);color:var(--ink-2)}
+.skipped b{color:var(--bad)}
+
+/* ── modal (fork) ────────────────────────────────────────────────────── */
+.backdrop{position:fixed;inset:0;background:#000000b8;z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:80px 20px}
+.modal{background:var(--sheet);border:1px solid var(--rule-2);box-shadow:0 4px 0 #00000090,0 24px 60px -20px #000;max-width:640px;width:100%}
+.modal h3{font:700 11px/1 var(--ff);letter-spacing:.17em;text-transform:uppercase;color:var(--ink-2);padding:14px 16px;border-bottom:1px solid var(--rule);background:#00000030}
+.modal .mbody{padding:16px}
+.modal label{display:block;font:400 9.5px/1 var(--ff);letter-spacing:.17em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+.modal textarea{
+  width:100%;min-height:130px;background:var(--sheet-3);border:1px solid var(--rule);
+  color:var(--ink);font:400 12px/1.5 var(--ff);padding:10px;resize:vertical;
+}
+.modal textarea:focus{outline:1px solid var(--amber);outline-offset:-1px}
+.modal .hint{margin-top:9px;font:400 10.5px/1.5 var(--ff);color:var(--ink-3)}
+.modal .err{margin-top:9px;font:400 11px/1.5 var(--ff);color:var(--bad)}
+
+/* ── misc ────────────────────────────────────────────────────────────── */
+.empty-note{padding:26px 16px;text-align:center;font:400 11.5px/1.7 var(--ff);color:var(--ink-3)}
+.sig{margin-top:24px;padding-top:10px;border-top:1px solid var(--rule);display:flex;gap:30px;font:400 10px/1 var(--ff);color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase;flex-wrap:wrap}
+.busy{opacity:.5}

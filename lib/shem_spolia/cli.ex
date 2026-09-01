@@ -6,6 +6,7 @@ defmodule ShemSpolia.CLI do
       shem_audit attest <session>   # write a bundle for a session
       shem_audit verify <session>   # recompute the chain, print the verdict
       shem_audit sessions           # list known sessions
+      shem_audit web [--port N]     # serve the timeline UI on 127.0.0.1
       shem_audit needle <tools.json> <query>
                                     # one audited Needle turn; prints the calls
                                     # and the session id holding the record
@@ -19,6 +20,9 @@ defmodule ShemSpolia.CLI do
       ["serve" | _] ->
         ShemSpolia.MCP.Server.serve()
         ShemSpolia.EventLog.flush()
+
+      ["web" | rest] ->
+        web(rest)
 
       ["attest", session | rest] ->
         one_shot(fn -> attest(session, rest) end)
@@ -116,6 +120,39 @@ defmodule ShemSpolia.CLI do
     case ShemSpolia.EventLog.known_session_ids() do
       [] -> IO.puts("(no sessions)")
       ids -> Enum.each(ids, &IO.puts/1)
+    end
+  end
+
+  # Long-running like `serve`, but with nothing to read from stdin — so the
+  # main process has to block on something. It sleeps rather than joining the
+  # acceptor: the acceptor is spawn_link'd from here, so if it dies the link
+  # takes this process down and the binary exits instead of idling with a dead
+  # listener.
+  defp web(args) do
+    port =
+      case args do
+        ["--port", p | _] ->
+          case Integer.parse(p) do
+            {n, ""} when n >= 0 and n <= 65_535 -> n
+            _ -> die("--port expects a number 0-65535, got: #{p}")
+          end
+
+        _ ->
+          String.to_integer(System.get_env("SHEM_SPOLIA_WEB_PORT") || "4180")
+      end
+
+    case ShemSpolia.Web.Server.start(port: port) do
+      {:ok, bound} ->
+        IO.puts("shem-spolia web · http://127.0.0.1:#{bound}")
+        IO.puts("log: #{ShemSpolia.EventLog.event_log_path()}")
+        IO.puts("ctrl-c to stop")
+        Process.sleep(:infinity)
+
+      {:error, {:listen_failed, p, :eaddrinuse}} ->
+        die("port #{p} is already in use — pass --port to pick another")
+
+      {:error, reason} ->
+        die("could not start web server: #{inspect(reason)}")
     end
   end
 

@@ -18,7 +18,7 @@ visible in the wall of the new one.
 
 ## Status
 
-Phases 0 and 1 complete and exercised end to end. Working today:
+Phases 0, 1 and 3 complete and exercised end to end. Working today:
 
 - hash-chained event log (DETS or Mnesia), with redaction before hashing and
   segment-digest GC
@@ -28,8 +28,10 @@ Phases 0 and 1 complete and exercised end to end. Working today:
 - MCP server over stdio exposing all four `audit.*` tools
 - **Needle transport** — one-shot and stateful-session modes, every turn recorded
   in the chain with its confidence score
+- **WebUI** — `shem_audit web` serves a chain-of-custody timeline on loopback:
+  verify, fork, issue bundles, search recall, live-tail the log
 
-Not built yet: the WebUI timeline (Phase 3). See `implementation_plan.md`.
+See `implementation_plan.md` for what each phase actually shipped.
 
 ## Build
 
@@ -37,18 +39,50 @@ Requires Erlang/OTP 27 and Elixir 1.17.
 
 ```bash
 mix deps.get
-MIX_ENV=prod mix escript.build   # -> ./shem_audit (1.4 MB, needs only `escript`)
+MIX_ENV=prod mix escript.build   # -> ./shem_audit (1.6 MB, needs only `escript`)
 ```
 
 ## Use
 
 ```bash
 ./shem_audit serve                   # MCP server on stdio
+./shem_audit web                     # WebUI on http://127.0.0.1:4180
 ./shem_audit sessions                # list recorded sessions
 ./shem_audit verify <session_id>     # recompute the chain
 ./shem_audit attest <session_id>     # write a bundle
 ./shem_audit needle tools.json "dim the living room to 30"
 ```
+
+## WebUI
+
+```bash
+./shem_audit web --port 4180
+```
+
+A demo surface over the same primitives the MCP tools use. Sessions down the
+left, the event chain as an exhibit sheet, and the actions an auditor actually
+takes: re-verify, issue a bundle, fork at an event, search recall. It live-tails
+via SSE, so a session being recorded in another terminal appears as it happens.
+
+**It refuses in public.** On a session whose chain is broken, `issue bundle` and
+`fork here` render struck-out and disabled, the red thread running down the
+events is visibly cut at the failing hash, and recall lists the session as
+excluded rather than quietly dropping it. The refusal is the product working, so
+it is shown rather than hidden.
+
+No build step and no dependencies: an HTTP/1.1 server over `:gen_tcp`
+(~250 lines) and a Preact + htm front end vendored as one file. HTML, CSS, JS
+and fonts are embedded in the binary at compile time — the same
+`@external_resource` trick `verify.py` uses, because an escript has no unpacked
+`priv/`. The `app.js` in this repo is byte-identical to the one the binary
+serves; nothing is minified or bundled.
+
+Binds `127.0.0.1` only and refuses to bind anything else — enforced in
+`Web.Server.bind_address/1`, not documented and hoped for. The CSP is
+`default-src 'self'` with no `'unsafe-inline'`, which is also why the font is
+self-hosted: a CDN link would be the auditor phoning home on page load.
+
+Design system: `DESIGN.md`.
 
 ## Needle
 
@@ -158,15 +192,23 @@ FAILED
 ```bash
 mix run test/smoke.exs      # in-VM: record, verify, attest, tamper, fork, recall
 python3 test/mcp_smoke.py   # drives the built ./shem_audit over real stdio
+python3 test/web_smoke.py   # drives the built ./shem_audit over real HTTP
+python3 test/web_interact.py http://127.0.0.1:4180/
+                            # drives the UI in a real Chromium over CDP
 NEEDLE_PATH=~/.local/share/needle/needle mix run test/needle_smoke.exs
                             # drives the real Needle model (skips if absent)
 ```
 
-The MCP suite is not redundant with the in-VM one: it caught two bugs the in-VM
-suite structurally could not — `:code.priv_dir/1` returning `{:error, :bad_name}`
-inside an escript (so `verify.py` never reached the bundle), and DETS never being
-flushed on a one-shot command (so a recorded session reopened as `LEGACY · 0`,
-silently losing the evidence). Run all three.
+The out-of-VM suites are not redundant with the in-VM one: they caught three
+bugs it structurally could not — `:code.priv_dir/1` returning
+`{:error, :bad_name}` inside an escript (so `verify.py` never reached the
+bundle), DETS never being flushed on a one-shot command (so a recorded session
+reopened as `LEGACY · 0`, silently losing the evidence), and `Chain.verify/3`
+reporting an *empty* session as `legacy` — a false "unverifiable" mark on every
+session between creation and its first append. Run all of them.
+
+`test/shot.py` and `test/shot_verified.py` screenshot a running server for
+visual review. Both are stdlib-only CDP clients — no playwright, no node.
 
 ## What it does not do
 

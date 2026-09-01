@@ -427,7 +427,98 @@ end
 
 ---
 
-## Phase 3: Optional WebUI (demo surface)
+## Phase 3: WebUI — **DONE**
+
+Built as a demo surface with no new dependencies and no build step. `shem_audit
+web` serves a chain-of-custody view on `127.0.0.1:4180`; the binary grew from
+1.4 MB to 1.64 MB and still needs nothing but `escript` on PATH.
+
+### What shipped
+
+| Module | Purpose |
+|---|---|
+| `ShemSpolia.Web.Server` | HTTP/1.1 over `:gen_tcp` — parse, route, respond; loopback enforced at bind |
+| `ShemSpolia.Web.Router` | 11 routes; wrong verb on a known path is 405, not 404 |
+| `ShemSpolia.Web.API` | sessions, events, verify, attest, fork, recall, stats |
+| `ShemSpolia.Web.Stream` | SSE live tail, polling on `{count, head_hash}` |
+| `ShemSpolia.Web.Assets` | compile-time embedded HTML/CSS/JS/fonts + CSP |
+| `priv/web/app.js` | Preact + htm UI, ~490 lines, no build step |
+| `shem_audit web [--port N]` | CLI entry |
+
+### Why not Bandit/Plug
+
+The claim of this binary is one file, no toolchain. Bandit would not have broken
+that — escripts bundle deps fine — but it couples an explicitly *optional* demo
+to the shipping artifact's dependency set. The surface needed is small enough to
+own: loopback only, single reader, GET static + a JSON API + one SSE stream.
+`Needle.HTTP` had already proved the harder direction (client) in 140 lines.
+
+Same reasoning on the front end. React needs node/npm/a bundler, which is the
+toolchain the binary exists to avoid. **Preact + htm** (13 KB, vendored, one
+file) gives the same component model and hooks with zero build step, so the
+`app.js` in the repo is byte-identical to the one the binary serves — which
+matters for a tool whose pitch is "check this yourself."
+
+### Design: CUSTODY
+
+Full system in `DESIGN.md`. The premise: **the output is an exhibit**, so the UI
+is a chain-of-custody sheet, not a dashboard. Dark carbon stock, Courier Prime
+throughout, red thread down the event chain that is **visibly severed** at a hash
+mismatch. Disposition is typed onto a ruled line rather than stamped; refusals
+render struck-out rather than hidden.
+
+Fonts are self-hosted and embedded (SIL OFL, ~85 KB for three faces) because the
+CSP is `default-src 'self'` and the tool claims no network egress — a font CDN
+would be the auditor phoning home on page load.
+
+### Divergences from the original Phase 3 plan
+
+1. **No Phoenix, no LiveView, no `phoenix_pubsub`.** See above. The plan assumed
+   adding them back; the binary is better without them.
+2. **No `Shem.Lab.Registry`-style timeline reuse.** Shem's timeline LiveView
+   renders *agents*; spolia's objects are chains, bundles, forks and recall
+   hits. Adapting it would have meant carrying UI for concepts spolia does not
+   have.
+3. **SSE, not LiveView diffing.** The EventLog has no pub/sub, and adding a
+   broadcast to the append path would make the recording hot path pay for a
+   feature only the demo uses. Polling also catches writes from a *different*
+   `shem_audit` process against the same log directory, which a broadcast
+   would miss.
+
+### One real bug, found by the smoke test
+
+`Chain.verify/3` reported `{:ok, :legacy, 0}` for an **empty** session. `:legacy`
+is a claim about evidence we cannot speak to — an unhashed prefix from before
+chaining existed. A session with no events has no such prefix; it has nothing,
+which is trivially intact. Every session created by `start_session/0` therefore
+carried a false "unverifiable" mark until its first append, and the web UI
+rendered that verdict prominently.
+
+Fixed with an explicit `verify([], _, nil) -> {:ok, :verified, 0}` clause. In a
+tool whose entire value is saying precisely what it does and does not know, a
+false accusation is worse than a crash.
+
+### Verified
+
+`python3 test/web_smoke.py` — **59 checks** driving the built binary over real
+HTTP: every static asset with its content type, woff2 magic bytes surviving the
+escript archive, CSP/nosniff/traversal, the full JSON API, 404 vs 405 vs 422,
+attest → `verify.py` VERIFIED → tamper the bundle → MISMATCH + nonzero exit,
+fork descent recorded, SSE frames parsing, and `ss -ltnp` confirming the socket
+is bound to `127.0.0.1` only.
+
+`python3 test/web_interact.py` — **24 checks** driving a real Chromium over CDP:
+session selection, payload expand/collapse, re-verify, bundle issue with the
+missing-tool-source finding, fork modal rejecting bad JSON client-side, branch
+creation switching selection, and recall showing the tampered session as
+`excluded` while serving zero hits from it.
+
+`test/shot.py` / `test/shot_verified.py` capture screenshots for visual review
+(stdlib-only CDP client; no playwright/node).
+
+---
+
+## Phase 3 (original plan, for reference)
 
 ### 3.1 Scope decision
 

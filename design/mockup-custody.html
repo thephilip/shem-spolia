@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>shem-spolia — CUSTODY</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════
+   DIRECTION B — "CUSTODY"
+   Chain of custody. Evidence bag, docket sheet, rubber stamp, red thread.
+
+   The argument: this tool's output is an EXHIBIT. A bundle gets handed to
+   someone who wasn't there and has no reason to trust you. Every dark
+   developer-tool UI says "telemetry"; a custody sheet says "evidence,
+   and here's who touched it." It also inverts the entire dark-IDE
+   convention, which is the fastest way to not look AI-averaged.
+   ══════════════════════════════════════════════════════════════════ */
+
+:root{
+  --paper:     #e8e2d4;   /* manila stock */
+  --paper-2:   #f2ede1;   /* index card, lighter */
+  --paper-3:   #ddd5c3;   /* folder tab / recessed */
+  --fiber:     #c9bfa8;
+  --rule:      #b3a68a;
+  --rule-hard: #8a7d63;
+
+  --ink:       #23201a;   /* typewriter ribbon black, warm */
+  --ink-2:     #55503f;
+  --ink-3:     #857c64;
+
+  --stamp-red: #a8342a;   /* rubber stamp, under-inked */
+  --stamp-grn: #2f6b4a;
+  --thread:    #b03a2e;   /* the red string */
+  --pencil:    #3c5a7a;   /* blue annotation pencil */
+  --highlight: #e8d44a55;
+
+  --ff-type: "Courier New",ui-monospace,monospace;   /* the whole UI is typed */
+  --ff-hand: "Segoe Script","Bradley Hand",cursive;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+body{
+  min-height:100vh;background:var(--paper);color:var(--ink);
+  font:400 13px/1.6 var(--ff-type);
+  position:relative;
+}
+/* paper fiber — coarse, low-contrast, non-repeating enough to read as stock */
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:900;opacity:.5;
+  mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='5'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .5 0 0 0 0 .4 0 0 0 .14 0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+/* the fold: this sheet was folded in thirds before it got to you */
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:899;
+  background:linear-gradient(90deg,#00000000 32.9%,#0000000f 33%,#00000000 33.2%,
+                                    #00000000 66.4%,#0000000f 66.5%,#00000000 66.7%);
+}
+
+.sheet{max-width:1060px;margin:0 auto;padding:0 34px 70px;position:relative;z-index:1}
+
+/* ── the punched holes down the left margin ── */
+.sheet::before{
+  content:"";position:absolute;left:11px;top:120px;bottom:60px;width:14px;
+  background-image:radial-gradient(circle at 7px 7px, #00000026 0 5.5px, #ffffff00 6px);
+  background-size:14px 132px;background-repeat:repeat-y;
+}
+
+/* ── docket head ── */
+.docket{padding:34px 0 14px;border-bottom:2px solid var(--ink);margin-bottom:2px}
+.docket .line{display:flex;align-items:flex-end;gap:16px}
+.docket h1{
+  font:700 21px/1 var(--ff-type);letter-spacing:.16em;text-transform:uppercase;
+  /* letterpress: pressed into the stock, not floating on it */
+  text-shadow:0 1px 0 #ffffff70;
+}
+.docket .sub{font:400 11px/1 var(--ff-type);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);padding-bottom:2px}
+.docket .no{margin-left:auto;font:400 11px/1.7 var(--ff-type);color:var(--ink-2);text-align:right}
+.docket .no b{letter-spacing:.06em}
+.underline2{height:1px;background:var(--ink);margin-bottom:22px}
+
+/* ── the counts, as a filled-in form row ── */
+.form{display:flex;gap:0;border:1px solid var(--rule-hard);margin-bottom:26px;background:var(--paper-2)}
+.field{flex:1;padding:9px 13px;border-right:1px solid var(--rule)}
+.field:last-child{border-right:0}
+.field .k{font:400 9px/1 var(--ff-type);letter-spacing:.17em;text-transform:uppercase;color:var(--ink-3)}
+.field .v{font:700 17px/1 var(--ff-type);margin-top:7px;font-variant-numeric:tabular-nums}
+.field .v.red{color:var(--stamp-red)}
+.field .v.grn{color:var(--stamp-grn)}
+
+.grid{display:grid;grid-template-columns:264px 1fr;gap:26px;align-items:start}
+
+/* ── left: the folder tabs ── */
+.tabs h2,.exhibit h2{
+  font:700 10px/1 var(--ff-type);letter-spacing:.19em;text-transform:uppercase;
+  color:var(--ink-2);margin-bottom:9px;
+}
+.tab{
+  display:block;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit;
+  background:var(--paper-3);
+  border:1px solid var(--rule-hard);border-left:5px solid var(--rule-hard);
+  padding:10px 12px;margin-bottom:-1px;position:relative;
+  transition:background .1s,border-left-color .1s;
+}
+.tab:hover{background:#e4dccb}
+.tab.sel{
+  background:var(--paper-2);border-left-color:var(--thread);
+  box-shadow:1px 0 0 var(--paper-2);z-index:2;
+}
+.tab .id{font:700 11.5px/1.3 var(--ff-type);word-break:break-all}
+.tab .st{margin-top:6px;font:400 10px/1 var(--ff-type);color:var(--ink-2);display:flex;align-items:center;gap:6px}
+.tick{font-weight:700}
+.tick.ok{color:var(--stamp-grn)}
+.tick.bad{color:var(--stamp-red)}
+.tab .clip{
+  position:absolute;right:8px;top:9px;font:400 10px/1 var(--ff-type);
+  color:var(--pencil);font-family:var(--ff-hand);
+}
+
+/* ── right: the exhibit sheet ── */
+.exhibit{position:relative}
+.card{
+  background:var(--paper-2);border:1px solid var(--rule-hard);
+  padding:0;box-shadow:2px 3px 0 #00000012;
+}
+.cardhead{
+  padding:13px 16px;border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;gap:14px;background:#0000000a;
+}
+.cardhead .sid{font:700 12.5px/1 var(--ff-type)}
+.cardhead .meta{margin-left:auto;font:400 10px/1 var(--ff-type);color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase}
+
+/* ── THE STAMP. Rotated, rough, over-printed on the sheet. ── */
+.stamp{
+  position:absolute;right:22px;top:-12px;z-index:5;
+  font:700 15px/1 var(--ff-type);letter-spacing:.13em;text-transform:uppercase;
+  color:var(--stamp-grn);border:3px double var(--stamp-grn);
+  padding:8px 15px 7px;transform:rotate(-6.5deg);
+  opacity:.82;   /* under-inked */
+  /* the roughness: a hard mask breaks the border and the glyph edges */
+  -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='60'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.09' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 1.25'/%3E%3C/filter%3E%3Crect width='160' height='60' filter='url(%23r)'/%3E%3C/svg%3E");
+  mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='60'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.09' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 1.25'/%3E%3C/filter%3E%3Crect width='160' height='60' filter='url(%23r)'/%3E%3C/svg%3E");
+}
+.stamp small{display:block;font:400 8px/1.4 var(--ff-type);letter-spacing:.1em;margin-top:3px;text-align:center}
+.stamp.void{color:var(--stamp-red);border-color:var(--stamp-red);transform:rotate(4deg);right:34px}
+
+/* ── the chain, strung on red thread ── */
+.log{padding:20px 18px 8px;position:relative}
+.log::before{ /* the thread */
+  content:"";position:absolute;left:29px;top:30px;bottom:30px;width:2px;
+  background:var(--thread);opacity:.75;
+}
+.entry{position:relative;padding-left:32px;margin-bottom:14px}
+.entry .knot{
+  position:absolute;left:24px;top:9px;width:12px;height:12px;border-radius:50%;
+  background:var(--paper-2);border:2px solid var(--thread);z-index:2;
+}
+.entry.cut .knot{background:var(--stamp-red);border-color:var(--stamp-red)}
+/* the thread is severed at the tamper point */
+.entry.cut::after{
+  content:"";position:absolute;left:23px;top:22px;width:14px;height:15px;
+  background:var(--paper-2);z-index:1;
+}
+
+.slipcard{
+  border:1px solid var(--rule);border-left:3px solid var(--rule-hard);
+  background:#fbf8f0;padding:9px 13px;box-shadow:1px 1px 0 #0000000d;
+}
+.entry.llm    .slipcard{border-left-color:var(--pencil)}
+.entry.tool   .slipcard{border-left-color:#9a7b2e}
+.entry.result .slipcard{border-left-color:var(--stamp-grn)}
+.entry.cut    .slipcard{border-left-color:var(--stamp-red);background:#fbf1ef}
+
+.slipcard .r1{display:flex;align-items:baseline;gap:11px}
+.slipcard .ty{font:700 10.5px/1 var(--ff-type);letter-spacing:.09em;text-transform:uppercase}
+.entry.llm .ty{color:var(--pencil)}.entry.tool .ty{color:#8a6d24}
+.entry.result .ty{color:var(--stamp-grn)}.entry.cut .ty{color:var(--stamp-red)}
+.slipcard .tm{margin-left:auto;font:400 10px/1 var(--ff-type);color:var(--ink-3);font-variant-numeric:tabular-nums}
+.slipcard .bd{margin-top:7px;font:400 12px/1.55 var(--ff-type);color:var(--ink-2)}
+.slipcard .bd em{font-style:normal;font-weight:700;color:var(--ink);background:var(--highlight);padding:0 2px}
+.slipcard .hx{
+  margin-top:8px;font:400 9.5px/1 var(--ff-type);color:var(--ink-3);
+  letter-spacing:.03em;border-top:1px dotted var(--rule);padding-top:7px;
+}
+.entry.cut .hx{color:var(--stamp-red);font-weight:700}
+/* the pencil annotation, in the margin, by hand */
+.margin-note{
+  position:absolute;right:-4px;top:6px;font-family:var(--ff-hand);
+  font-size:12px;color:var(--pencil);transform:rotate(-3deg);
+}
+
+/* ── actions: stamped buttons, not chrome ── */
+.strip{display:flex;gap:10px;padding:14px 16px;border-top:1px solid var(--rule);background:#0000000a}
+button.st{
+  font:700 10.5px/1 var(--ff-type);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink);background:var(--paper-3);cursor:pointer;
+  border:1px solid var(--ink);padding:9px 14px;
+  box-shadow:2px 2px 0 var(--ink);transition:transform .05s,box-shadow .05s;
+}
+button.st:hover{background:#e6ddc9}
+button.st:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--ink)}
+button.st.go{background:var(--stamp-red);color:#fbf8f0;border-color:#7d251d;box-shadow:2px 2px 0 #7d251d}
+button.st:disabled{
+  opacity:.4;cursor:not-allowed;box-shadow:none;transform:none;
+  text-decoration:line-through;
+}
+.finding{
+  padding:11px 16px;font:400 11px/1.6 var(--ff-type);color:var(--ink-2);
+  border-top:1px solid var(--rule);
+}
+.finding b{color:var(--stamp-red)}
+.sig{
+  margin-top:24px;padding-top:10px;border-top:1px solid var(--rule);
+  display:flex;gap:30px;font:400 10px/1 var(--ff-type);color:var(--ink-3);
+  letter-spacing:.1em;text-transform:uppercase;
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="docket">
+    <div class="line">
+      <h1>Shem&middot;Spolia</h1>
+      <span class="sub">chain of custody</span>
+      <div class="no">
+        LOG <b>/tmp/spolia_web_probe</b><br>
+        VER <b>0.1.0</b> &nbsp; NEEDLE <b>absent</b>
+      </div>
+    </div>
+  </div>
+  <div class="underline2"></div>
+
+  <div class="form">
+    <div class="field"><div class="k">sessions held</div><div class="v">3</div></div>
+    <div class="field"><div class="k">verified</div><div class="v grn">2</div></div>
+    <div class="field"><div class="k">broken seal</div><div class="v red">1</div></div>
+    <div class="field"><div class="k">events</div><div class="v">13</div></div>
+    <div class="field"><div class="k">bundles issued</div><div class="v">1</div></div>
+  </div>
+
+  <div class="grid">
+
+    <aside class="tabs">
+      <h2>custody file</h2>
+      <button class="tab sel">
+        <div class="id">ses_c1332e94907e50b6</div>
+        <div class="st"><span class="tick ok">✓</span> verified &middot; 4 events</div>
+      </button>
+      <button class="tab">
+        <div class="id">ses_fork_1b9544c2b8b5</div>
+        <div class="st"><span class="tick ok">✓</span> verified &middot; 6 events</div>
+        <div class="clip">branch</div>
+      </button>
+      <button class="tab">
+        <div class="id">ses_tamper</div>
+        <div class="st"><span class="tick bad">✕</span> seal broken</div>
+      </button>
+    </aside>
+
+    <main class="exhibit">
+      <h2>exhibit — event chain</h2>
+
+      <div class="card" style="position:relative">
+        <div class="stamp">verified<small>portable head a81dff08</small></div>
+
+        <div class="cardhead">
+          <span class="sid">ses_c1332e94907e50b6</span>
+          <span class="meta">4 entries &middot; sha-256 chained</span>
+        </div>
+
+        <div class="log">
+          <div class="entry llm">
+            <div class="knot"></div>
+            <div class="slipcard">
+              <div class="r1"><span class="ty">llm call started</span><span class="tm">23:15:18.522</span></div>
+              <div class="bd">model <em>needle2</em> &mdash; prompt <em>“turn off the kitchen lights”</em></div>
+              <div class="hx">02c3e3e9916b9975 8029df17fd3e5e37</div>
+            </div>
+          </div>
+          <div class="entry tool">
+            <div class="knot"></div>
+            <div class="slipcard">
+              <div class="r1"><span class="ty">agent tool called</span><span class="tm">23:15:18.524</span></div>
+              <div class="bd">tool <em>lights.set</em> &mdash; room <em>kitchen</em>, on <em>false</em></div>
+              <div class="hx">5a1f0c7e4b2d8891 c40e77b2a9d31f06</div>
+            </div>
+          </div>
+          <div class="entry result">
+            <div class="knot"></div>
+            <div class="slipcard">
+              <div class="r1"><span class="ty">agent tool result</span><span class="tm">23:15:18.524</span></div>
+              <div class="bd">tool <em>lights.set</em> &mdash; ok <em>true</em></div>
+              <div class="hx">c93b7e10ad4f5528 61b8e0d5cc27a4f3</div>
+            </div>
+          </div>
+          <div class="entry llm">
+            <div class="knot"></div>
+            <span class="margin-note">head ↴</span>
+            <div class="slipcard">
+              <div class="r1"><span class="ty">llm call completed</span><span class="tm">23:15:18.524</span></div>
+              <div class="bd">calls <em>1</em> &mdash; confidence <em>0.94</em></div>
+              <div class="hx">74cab520dbce210d 1111d84f8f2a3912</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="strip">
+          <button class="st go">issue bundle</button>
+          <button class="st">fork here</button>
+          <button class="st">re-verify</button>
+        </div>
+        <div class="finding">
+          Bundle verifies offline: <b>python3 verify.py</b> recomputes the portable head with
+          stdlib only. Tool <em>lights.set</em> source was MISSING at export and is recorded as such.
+        </div>
+      </div>
+
+      <div style="height:26px"></div>
+
+      <div class="card" style="position:relative">
+        <div class="stamp void">seal broken<small>at evt_d00b4b0a</small></div>
+        <div class="cardhead">
+          <span class="sid">ses_tamper</span>
+          <span class="meta">3 entries &middot; chain fails at #2</span>
+        </div>
+        <div class="log">
+          <div class="entry llm">
+            <div class="knot"></div>
+            <div class="slipcard">
+              <div class="r1"><span class="ty">llm call started</span><span class="tm">23:15:57.302</span></div>
+              <div class="bd">prompt <em>“wire $50 to account 12”</em></div>
+              <div class="hx">e360a9b4f9364777 e0512db3f9a98ca1</div>
+            </div>
+          </div>
+          <div class="entry cut">
+            <div class="knot"></div>
+            <span class="margin-note" style="color:var(--stamp-red)">altered on disk</span>
+            <div class="slipcard">
+              <div class="r1"><span class="ty">agent tool called</span><span class="tm">23:15:57.303</span></div>
+              <div class="bd">tool <em>bank.transfer</em> &mdash; amount <em>50000</em></div>
+              <div class="hx">✕ recorded hash does not match these bytes</div>
+            </div>
+          </div>
+        </div>
+        <div class="strip">
+          <button class="st go" disabled>issue bundle</button>
+          <button class="st" disabled>fork here</button>
+          <button class="st">re-verify</button>
+        </div>
+        <div class="finding">
+          <b>No bundle will be issued from this session.</b> Everything at and after
+          evt_d00b4b0aebc4c358 is unattested; recall excludes it from memory.
+        </div>
+      </div>
+
+      <div class="sig">
+        <span>recorded by shem&middot;spolia 0.1.0</span>
+        <span>127.0.0.1 only</span>
+        <span>no network egress</span>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>
