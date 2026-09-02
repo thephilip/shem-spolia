@@ -1,0 +1,78 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Builds the escript and runs every suite that does not need a browser or
+  # the Needle binary. One artifact: `shem_audit` is BEAM bytecode in a zip
+  # behind a shebang, so it is architecture- and libc-independent. There is
+  # nothing to build per platform.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          elixir-version: "1.17.3"
+
+      - run: mix deps.get
+
+      - name: Build escript
+        run: MIX_ENV=prod mix escript.build
+
+      - name: In-VM smoke (record, verify, attest, tamper, fork, recall)
+        run: mix run test/smoke.exs
+
+      - name: MCP stdio smoke
+        run: python3 test/mcp_smoke.py
+
+      - name: Web smoke
+        run: python3 test/web_smoke.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shem_audit
+          path: shem_audit
+          if-no-files-found: error
+
+  # The claim under test: the binary runs with an Erlang runtime and nothing
+  # else. The container has no Elixir, no mix, no deps, no network fetch — and
+  # it is musl where the build was glibc, which is the point of shipping
+  # bytecode. Checkout and download run on the host so no action has to
+  # execute inside Alpine.
+  clean-room:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: shem_audit
+
+      # erlang:27-alpine has escript but no python3, and the test run below has
+      # no network, so python3 goes in here. Empty build context on purpose.
+      - name: Build clean-room image
+        run: |
+          printf 'FROM erlang:27-alpine\nRUN apk add --no-cache python3\n' \
+            | docker build -t spolia-cleanroom -
+
+      - name: Run offline in the clean room
+        run: |
+          chmod +x shem_audit
+          docker run --rm --network none -v "$PWD:/w" -w /w spolia-cleanroom sh -c '
+            set -e
+            if command -v elixir >/dev/null; then echo "elixir present, not a clean room"; exit 1; fi
+            if command -v mix    >/dev/null; then echo "mix present, not a clean room";    exit 1; fi
+            erl -noshell -eval "io:format(\"OTP ~s / musl~n\",[erlang:system_info(otp_release)]),halt()."
+            python3 test/mcp_smoke.py
+          '

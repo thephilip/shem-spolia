@@ -288,7 +288,11 @@ end
 
 ---
 
-## Phase 2: MCP auditor tools (the four `audit.*` tools)
+## Phase 2: MCP auditor tools (the four `audit.*` tools) — **DONE**
+
+Shipped in the Phase 0 commit (8e04d3a), which is why this section was never
+marked. All four tools live in `lib/shem_spolia/mcp/tools/` and are registered
+in `ShemSpolia.MCP.Router`. `test/mcp_smoke.py` drives them over real stdio.
 
 ### 2.1 Tool: `audit.verify_chain`
 
@@ -421,9 +425,9 @@ end
 
 ### 2.5 Tasks
 
-- [ ] Implement four tool modules
-- [ ] Register them in `ShemSpolia.MCP.Router`
-- [ ] Verify MCP stdio server loads and exposes all four tools
+- [x] Implement four tool modules
+- [x] Register them in `ShemSpolia.MCP.Router`
+- [x] Verify MCP stdio server loads and exposes all four tools
 
 ---
 
@@ -550,23 +554,33 @@ The spec treats WebUI as "optional demo surface." If kept:
 
 ### 4.1 Packaging
 
-- `mix escript.build` → `shem_audit` binary (~15-20MB with Erlang embedded)
-- Include `verify.py` in the release artifacts (documentation + download)
-- GitHub Actions: build on Linux (x86_64, aarch64), macOS (x86_64, aarch64)
+- `mix escript.build` → `shem_audit` binary (1.6 MB; `app: nil`, no embedded runtime)
+- `verify.py` is embedded at compile time, so it ships inside the binary already
+- **No build matrix.** `file shem_audit` reports a zip of BEAM bytecode behind a
+  `#!/usr/bin/env escript` shebang: architecture- and libc-independent. Building
+  Linux x86_64/aarch64 and macOS variants would emit four identical files. One
+  job, one artifact, any host with an Erlang runtime.
 
 ### 4.2 Documentation
 
-- `README.md` — quickstart: `./shem_audit` + connect from Claude Code
-- `NEEDLE.md` — how to download Needle, set `NEEDLE_PATH`
-- `VERIFY.md` — `python3 verify.py bundle/` walkthrough
-- `FORK_RECALL.md` — fork/replay/recall via MCP tools
+`README.md` already covers the quickstart, Needle install and `NEEDLE_PATH`, the
+`verify.py` walkthrough, and the fork/recall tool surface. The separate
+`NEEDLE.md`, `VERIFY.md` and `FORK_RECALL.md` planned here would duplicate it;
+cut unless the README is later split.
 
 ### 4.3 Tasks
 
-- [ ] Configure escript build for cross-platform
-- [ ] Write README.md, NEEDLE.md, VERIFY.md, FORK_RECALL.md
-- [ ] Add GitHub Actions workflow
-- [ ] Test `shem_audit` binary on clean machine (no Elixir)
+- [x] Configure escript build for cross-platform — nothing to configure, see 4.1
+- [x] Add GitHub Actions workflow — `.github/workflows/build.yml`, unpushed, so
+      it has never run on GitHub; the clean-room job was validated locally under
+      podman
+- [x] Test `shem_audit` binary on clean machine (no Elixir)
+
+The clean room is `erlang:27-alpine` plus `python3`, run with `--network none`:
+no Elixir, no mix, no deps, no fetch, and musl where the build was glibc. It
+runs `test/mcp_smoke.py`, which drives the binary over real stdio and ends by
+exporting a bundle and verifying it offline with the embedded `verify.py`.
+Passing that is the portability claim, tested rather than asserted.
 
 ---
 
@@ -601,8 +615,19 @@ Phase 0 (extract core)
 
 ## Open questions before starting
 
-1. **Needle binary path resolution** — bundle it in the release? Require user to download and set `NEEDLE_PATH`? Download at runtime from HF?
-2. **MCP server transport** — stdio only (for Claude Code/OpenCode)? Or also HTTP+SSE (for Claude Desktop)? The existing `Shem.MCP.Server` does stdio; HTTP would need additional work.
+1. **Needle binary path resolution** — **DECIDED: keep the `NEEDLE_PATH`
+   prerequisite.** No bundling, no runtime download. A later install script may
+   fetch it and help with configuration, prompting for permission before it
+   touches anything.
+2. **MCP server transport** — **DECIDED: stdio only.** The MCP spec (rev
+   2026-07-28) defines two bindings, stdio and Streamable HTTP; the two-endpoint
+   "HTTP+SSE" transport named in the original question no longer exists, and SSE
+   survives only as one of the reply shapes a Streamable HTTP POST can return.
+   Streamable HTTP exists to cross a network boundary, which this tool does not
+   have: it reads a local event log. Adding it would buy session management,
+   Origin validation against DNS rebinding, and an auth story, against a product
+   claim of offline verifiability and a hard loopback bind. Revisit only if the
+   auditor ever runs on a different host from the agent it records.
 3. **Session storage** — DETS per-session (current) or Mnesia? DETS is simpler for single-node; Mnesia adds clustering but complexity. Spec says DETS for MVP.
 4. **Config file location** — `~/.config/shem_spolia/config.exs`? Environment variables only? CLI flags?
 

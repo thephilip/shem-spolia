@@ -18,7 +18,7 @@ visible in the wall of the new one.
 
 ## Status
 
-Phases 0, 1 and 3 complete and exercised end to end. Working today:
+Phases 0 through 3 complete and exercised end to end. Working today:
 
 - hash-chained event log (DETS or Mnesia), with redaction before hashing and
   segment-digest GC
