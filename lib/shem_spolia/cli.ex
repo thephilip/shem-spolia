@@ -10,6 +10,10 @@ defmodule ShemSpolia.CLI do
       shem_audit needle <tools.json> <query>
                                     # one audited Needle turn; prints the calls
                                     # and the session id holding the record
+      shem_audit record [--session ID] [--type T] [--quiet]
+                                    # read one JSON object on stdin and append
+                                    # it to a chain. Built for Claude Code's
+                                    # PostToolUse hook; see README.
   """
 
   def main(argv) do
@@ -35,6 +39,9 @@ defmodule ShemSpolia.CLI do
 
       ["needle", tools, query | _] ->
         one_shot(fn -> needle(tools, query) end)
+
+      ["record" | rest] ->
+        one_shot(fn -> record(rest) end)
 
       [] ->
         usage()
@@ -114,6 +121,56 @@ defmodule ShemSpolia.CLI do
       {:error, reason} ->
         die("needle failed: #{inspect(reason)} (recorded in #{session_id})")
     end
+  end
+
+  # Recording must never take down the session it is recording. A hook that
+  # exits nonzero interrupts the agent, so a malformed payload or a locked log
+  # is a warning on stderr and exit 0 — the gap shows up as a missing event,
+  # which is the honest failure mode. `die/1` is reserved for arguments the
+  # user got wrong, which happens at setup time, not mid-session.
+  defp record(args) do
+    {session, type, quiet} = record_opts(args)
+
+    case IO.read(:stdio, :eof) do
+      :eof ->
+        warn("record: empty stdin, nothing to record")
+
+      {:error, reason} ->
+        warn("record: stdin error: #{inspect(reason)}")
+
+      raw ->
+        case ShemSpolia.Ingest.ingest(raw, session: session, type: type) do
+          {:ok, session_id, event_id} ->
+            unless quiet, do: IO.puts("#{session_id} #{event_id}")
+
+          {:error, :no_session} ->
+            warn("record: no session_id in payload and no --session given")
+
+          {:error, {:bad_session_id, id}} ->
+            die("record: --session must match [A-Za-z0-9_.-]{1,96}, got: #{id}")
+
+          {:error, reason} ->
+            warn("record: not recorded: #{inspect(reason)}")
+        end
+    end
+  end
+
+  defp record_opts(args), do: record_opts(args, {nil, nil, false})
+
+  defp record_opts([], acc), do: acc
+
+  defp record_opts(["--session", v | rest], {_s, t, q}), do: record_opts(rest, {v, t, q})
+  defp record_opts(["--type", v | rest], {s, _t, q}), do: record_opts(rest, {s, v, q})
+  defp record_opts(["--quiet" | rest], {s, t, _q}), do: record_opts(rest, {s, t, true})
+
+  defp record_opts([flag | _], _acc) when flag in ["--session", "--type"],
+    do: die("record: #{flag} expects a value")
+
+  defp record_opts([other | _], _acc), do: die("record: unknown option: #{other}")
+
+  defp warn(msg) do
+    IO.puts(:stderr, msg)
+    :ok
   end
 
   defp sessions do

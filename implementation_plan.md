@@ -550,7 +550,109 @@ The spec treats WebUI as "optional demo surface." If kept:
 
 ---
 
-## Phase 4: Distribution & Polish
+## Phase 4: Distribution & Polish — **DONE**
+
+### 4.0 Ingestion: the gap the plan did not have a phase for
+
+Phases 0-3 built a complete evidence pipeline with nothing entering it. The
+README claimed `shem_audit` recorded "every tool call it mediates" as an MCP
+server; it mediates nothing. `MCP.Server.record/4` logs only the four `audit.*`
+calls into `ses_TOOL_INVOCATIONS`. An MCP server structurally **cannot** see a
+client's calls to other servers, and never sees built-in tools like `Bash` —
+which is where the risk actually lives.
+
+The fix is not a proxy (one upstream server, still blind to `Bash`). It is the
+client handing over the record: Claude Code's `PostToolUse` hook fires for
+**every** tool, built-in and MCP alike, with the full tool envelope on stdin.
+
+**What shipped**
+
+| Module | Purpose |
+|---|---|
+| `ShemSpolia.Ingest` | JSON object → classified, size-capped, chained event |
+| `shem_audit record` | CLI: one payload on stdin; `--session`, `--type`, `--quiet` |
+
+Design points, each of which is a constraint the hook contract imposes:
+
+1. **Never fail the agent.** A hook exiting nonzero interrupts the session it is
+   recording. Malformed JSON, a missing session id, an unwritable log — all
+   stderr + exit 0. Only bad *arguments* exit nonzero, and those are a setup-time
+   mistake, not a runtime one.
+2. **Session ids are derived, not trusted.** `Ingest.derive/1` folds the client's
+   session id (a UUID) to `ses_<16 hex>`: deterministic, so one agent session is
+   one chain, and constrained, so nothing a client sends becomes a path. Explicit
+   `--session` is regex-gated for the same reason.
+3. **Event types are not atoms from input.** Explicit `defp safe_type/1` clauses;
+   unknown types degrade to `:external` rather than growing the atom table.
+4. **`:agent_tool_called` with a `tool` key**, because that is the vocabulary
+   `Attest.collect_tools/1` already filters on — hook-recorded calls appear in
+   bundles as tools with no change there.
+5. **Oversized values collapse to their own hash.** A `Read` of a large file is
+   megabytes; the chain commits to `{"$truncated": {sha256, bytes, head}}` rather
+   than storing the bytes.
+
+### 4.0.1 The claim was corrected, not just implemented
+
+A cooperative recorder cannot prove completeness. The hook runs because a
+settings file says so, and that file is editable by whoever runs the agent:
+remove it, work, restore it, and the surviving chain verifies perfectly because
+it *is* intact. The README now leads with this. What spolia offers is a
+tamper-evident record **of what was recorded** — which is what every honest audit
+log offers, and is a smaller claim than "auditor."
+
+### 4.1 Packaging
+
+- `mix escript.build` → `shem_audit` binary (1.6 MB; `app: nil`, no embedded runtime)
+- `verify.py` is embedded at compile time, so it ships inside the binary already
+- **No build matrix.** `file shem_audit` reports a zip of BEAM bytecode behind a
+  `#!/usr/bin/env escript` shebang: architecture- and libc-independent. Building
+  Linux x86_64/aarch64 and macOS variants would emit four identical files. One
+  job, one artifact, any host with an Erlang runtime.
+- **Releases are gated on the clean room.** The `release` job needs `clean-room`,
+  so a `v*` tag publishes only a binary already proved to run with nothing but an
+  Erlang runtime, offline, on musl. Publishing before that gate would be shipping
+  the portability claim untested.
+
+### 4.2 Documentation
+
+`README.md` covers the quickstart, the hook setup, Needle install and
+`NEEDLE_PATH`, the `verify.py` walkthrough, and the fork/recall tool surface. The
+separate `NEEDLE.md`, `VERIFY.md` and `FORK_RECALL.md` planned here would
+duplicate it; cut unless the README is later split.
+
+### 4.3 Tasks
+
+- [x] Configure escript build for cross-platform — nothing to configure, see 4.1
+- [x] Add GitHub Actions workflow — `.github/workflows/build.yml`
+- [x] Test `shem_audit` binary on clean machine (no Elixir)
+- [x] Ingest path + `shem_audit record`
+- [x] Release job on `v*` tags
+
+The clean room is `erlang:27-alpine` plus `python3`, run with `--network none`:
+no Elixir, no mix, no deps, no fetch, and musl where the build was glibc. It
+runs `test/mcp_smoke.py`, which drives the binary over real stdio and ends by
+exporting a bundle and verifying it offline with the embedded `verify.py`.
+Passing that is the portability claim, tested rather than asserted.
+
+### Verified
+
+`python3 test/ingest_smoke.py` — **34 checks** driving the built binary the way a
+hook does: a realistic `PostToolUse` envelope, several calls folding into one
+derived session, MCP-named tools alongside built-ins, every failure mode exiting
+0 with a reason on stderr, `--session` rejecting traversal and whitespace, a
+200 KB `tool_response` not entering the log whole, and the bundle path end to
+end — attest, `verify.py` VERIFIED, then rewrite the recorded `rm -rf` in
+`events.jsonl` and get `CHAIN MISMATCH` + `FAILED` + nonzero exit.
+
+Also exercised against **a real Claude Code session** (v2.1.259), not a synthetic
+payload: an empty-matcher `PostToolUse` hook, one `claude -p` run that wrote a
+file and shelled out, and both `Write` and `Bash` landed in one chain with full
+arguments, verified and attested clean. That is the test the synthetic suite
+cannot do — it confirms the hook payload shape is what `Ingest` actually expects.
+
+---
+
+## Phase 4 (original plan, for reference)
 
 ### 4.1 Packaging
 

@@ -1,11 +1,11 @@
 # shem-spolia
 
-A portable, offline-verifiable auditor for local-model agents.
+A portable, offline-verifiable record of what a coding agent did.
 
-`shem_audit` is an MCP server. Point any MCP client at it — Claude Code, OpenCode,
-Claude Desktop — and every tool call it mediates lands in a SHA-256 hash chain.
-Export a session and you get a bundle that anyone can verify on a machine with
-no Elixir, no Erlang, and no network:
+Hook `shem_audit record` into Claude Code and every tool call it makes — `Bash`,
+`Edit`, `Write`, and any MCP tool — lands in a SHA-256 hash chain. Export a
+session and you get a bundle that anyone can verify on a machine with no Elixir,
+no Erlang, and no network:
 
 ```
 python3 verify.py .
@@ -16,12 +16,28 @@ VERIFIED
 Salvaged from [Shem](../shem). *Spolia*: the reused stone of an older building,
 visible in the wall of the new one.
 
+## What this proves, and what it does not
+
+The chain proves **nobody edited the record after the fact**. Change one byte of
+a recorded command and the bundle stops verifying, at that line, permanently.
+
+It does **not** prove the record is complete. The hook runs because a settings
+file says so, and whoever runs the agent can edit that file. Someone can remove
+the hook, work, and put it back; the surviving chain verifies perfectly, because
+it is intact. This is a tamper-evident record *of what was recorded* — not proof
+of everything that happened.
+
+Every cooperative audit log has this property. Naming it is the difference
+between evidence and a claim.
+
 ## Status
 
-Phases 0 through 3 complete and exercised end to end. Working today:
+Phases 0 through 4 complete and exercised end to end. Working today:
 
 - hash-chained event log (DETS or Mnesia), with redaction before hashing and
   segment-digest GC
+- **`shem_audit record`** — ingest a client's tool calls from a hook; proven
+  against a real Claude Code session
 - attest bundles + the stdlib-Python verifier, with tamper detection proven by test
 - counterfactual forks that are themselves real, verifiable, attestable sessions
 - BM25 recall across chain-verified sessions, each hit carrying a fork point
@@ -42,16 +58,72 @@ mix deps.get
 MIX_ENV=prod mix escript.build   # -> ./shem_audit (1.6 MB, needs only `escript`)
 ```
 
+Or download `shem_audit` from a [release](../../releases) — it is BEAM bytecode
+behind a shebang, so one file runs on any architecture and libc with an Erlang
+runtime.
+
 ## Use
 
 ```bash
 ./shem_audit serve                   # MCP server on stdio
+./shem_audit record                  # ingest one tool call on stdin (see below)
 ./shem_audit web                     # WebUI on http://127.0.0.1:4180
 ./shem_audit sessions                # list recorded sessions
 ./shem_audit verify <session_id>     # recompute the chain
 ./shem_audit attest <session_id>     # write a bundle
 ./shem_audit needle tools.json "dim the living room to 30"
 ```
+
+## Recording an agent
+
+`shem_audit` is an MCP server, but that is not how it observes an agent — an MCP
+server cannot see calls the client makes to *other* servers, and never sees
+built-in tools like `Bash`, which is where the risk actually lives. The client
+has to hand over the record. Claude Code's `PostToolUse` hook does exactly that,
+for every tool.
+
+`.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "shem_audit record --quiet" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+An empty `matcher` matches every tool. The hook payload arrives on stdin;
+`record` derives a spolia session id from the client's own `session_id`, so one
+agent session is one chain:
+
+```bash
+./shem_audit sessions
+ses_b0c2dbb9f2fc784d
+
+./shem_audit verify ses_b0c2dbb9f2fc784d
+VERIFIED · 2 events
+```
+
+**It never fails the agent.** A hook that exits nonzero interrupts the session it
+is recording, so malformed input, a missing session id, or an unwritable log is a
+line on stderr and exit 0. The gap shows up as a missing event, which is the
+honest failure mode. Only a mistake in the *arguments* — the kind you make once,
+at setup — exits nonzero.
+
+Oversized values (a `Read` of a large file) collapse to `{"$truncated": {sha256,
+bytes, head}}`. The chain still commits to the exact bytes without storing them.
+
+`--session ID` overrides the derived id; `--type T` overrides the event type.
+Any JSON object works, so any harness that can pipe JSON is a producer —
+Claude Code is the tested path, not the only one.
+
 
 ## WebUI
 
@@ -191,6 +263,7 @@ FAILED
 
 ```bash
 mix run test/smoke.exs      # in-VM: record, verify, attest, tamper, fork, recall
+python3 test/ingest_smoke.py # drives `shem_audit record` as a hook would
 python3 test/mcp_smoke.py   # drives the built ./shem_audit over real stdio
 python3 test/web_smoke.py   # drives the built ./shem_audit over real HTTP
 python3 test/web_interact.py http://127.0.0.1:4180/
@@ -212,6 +285,8 @@ visual review. Both are stdlib-only CDP clients — no playwright, no node.
 
 ## What it does not do
 
+- **Does not prove the record is complete.** See "What this proves" above. A
+  cooperative recorder cannot; the hook is removable by whoever runs the agent.
 - **Does not drive agents.** It records them. A harness could be built on top of
   the fork/replay primitives; that is a different project.
 - **Cannot bundle third-party MCP tool source.** Those tools live on another
