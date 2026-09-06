@@ -49,6 +49,26 @@ Phases 0 through 4 complete and exercised end to end. Working today:
 
 See `implementation_plan.md` for what each phase actually shipped.
 
+## Install
+
+```bash
+./install.sh                 # latest release, digest-checked, into ~/.local/bin
+./install.sh --from-source   # build the escript here instead
+./install.sh --with-needle   # also fetch the Needle binary
+```
+
+It prompts before every download, install, and package-manager command (`--yes`
+answers them in advance), installs Erlang through `mise` or your package manager
+when `escript` is missing, and finishes by recording one event and verifying the
+chain over it — so a run that reports success has exercised the binary, not just
+copied it.
+
+What the checks are worth, stated rather than implied: the release digest is
+published alongside the release, so it catches a corrupted download, not a
+compromised one. Needle publishes no digest at all, so the script records what
+arrived on first install and stops to ask if a later run finds something
+different.
+
 ## Build
 
 Requires Erlang/OTP 27 and Elixir 1.17.

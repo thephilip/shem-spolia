@@ -730,8 +730,20 @@ Phase 0 (extract core)
    Origin validation against DNS rebinding, and an auth story, against a product
    claim of offline verifiability and a hard loopback bind. Revisit only if the
    auditor ever runs on a different host from the agent it records.
-3. **Session storage** — DETS per-session (current) or Mnesia? DETS is simpler for single-node; Mnesia adds clustering but complexity. Spec says DETS for MVP.
-4. **Config file location** — `~/.config/shem_spolia/config.exs`? Environment variables only? CLI flags?
+3. **Session storage** — **DECIDED: DETS by default, Mnesia only when there is
+   a cluster to justify it.** `EventLog.select_store/0` picks DETS unless
+   `:event_log_store` names one explicitly, `:force_mnesia` is set, or
+   `Node.list()` is non-empty, so a single node never pays for clustering it
+   does not use and a connected node gets replication without a config change. Consequence, recorded in the README's limits:
+   recall's corpus is the on-disk DETS directory, so Mnesia-backed sessions are
+   not indexed yet.
+4. **Config file location** — **DECIDED: no config file.** An escript cannot
+   read one, which is what made `SHEM_SPOLIA_EVENT_LOG_PATH` necessary during
+   Phase 0. Resolution order is the env var, then app config, then
+   `~/.config/shem_spolia/events`. The env var is the only knob the escript
+   reads from the environment; everything else that varies is an app config key
+   or a CLI flag on the command that needs it (`web --port`,
+   `record --session/--type/--quiet`).
 
 ---
 
@@ -790,15 +802,16 @@ priv/attest/verify.py              → priv/attest/verify.py (copy verbatim)
 
 ## Next action
 
-Pick the first task from Phase 0 and start. Recommended order:
+Phases 0 through 4 are done, `v0.1.0` is tagged and released, and CI is green
+with the clean room proving the portability claim on every push. The four open
+questions above are all decided and match the code.
 
-1. `shem-spolia/mix.exs` — defines everything else
-2. Copy `verify.py` — the trust anchor
-3. Extract `EventLog.Chain` + `CanonicalJSON` — pure logic, no deps
-4. Extract `Attest.build/2` — produces the bundle
-5. Extract `MCP.Server` + `MCP.Router` — the auditor surface
-6. Write the four `audit.*` tools
-7. Write `Application` + `CLI` + escript config
-8. Test end-to-end with `./shem_audit` + Claude Code
+Nothing is queued. The work that would come next, none of it committed to:
 
-Want me to start on any specific task, or do you want to review this plan first?
+1. **Index Mnesia-backed sessions in recall.** The one gap the README names as a
+   limit rather than a decision.
+2. **Streamable HTTP for MCP.** Deferred in Q2, and only if the auditor ever
+   runs on a different host from the agent it records.
+3. **A second producer.** `record` takes any JSON object on stdin, so the hook
+   contract is harness-independent by construction — but Claude Code is the only
+   client it has been proven against.
